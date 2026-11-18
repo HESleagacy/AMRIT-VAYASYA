@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import os
-
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from functools import lru_cache

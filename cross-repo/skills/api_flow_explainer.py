@@ -56,7 +56,7 @@ def _section(title: str) -> str:
 def _render_deterministic(ev: TraversalEvidence) -> str:
     lines: list[str] = []
 
-    lines.append(f'\nAPI FLOW EXPLAINER  --  DETERMINISTIC MODE')
+    lines.append('\nAPI FLOW EXPLAINER  --  DETERMINISTIC MODE')
     lines.append(f'Feature: {ev.feature}')
     lines.append(f'Confidence: {ev.confidence:.0%}')
     lines.append(f'Evidence steps: {len(ev.provenance)}')
@@ -135,14 +135,14 @@ def _build_llm_context(ev: TraversalEvidence) -> str:
     The LLM receives ONLY this; it never queries Neo4j or Qdrant itself.
     """
     parts: list[str] = [
-        f'You are an expert software architect explaining code to a developer.',
-        f'Below is deterministic graph evidence extracted from AMRIT repositories.',
-        f'Your task: synthesize this into a clear, structured architecture explanation.',
-        f'Do NOT speculate. Cite only what is in the evidence.',
-        f'',
+        'You are an expert software architect explaining code to a developer.',
+        'Below is deterministic graph evidence extracted from AMRIT repositories.',
+        'Your task: synthesize this into a clear, structured architecture explanation.',
+        'Do NOT speculate. Cite only what is in the evidence.',
+        '',
         f'FEATURE QUERY: {ev.feature}',
         f'TRAVERSAL CONFIDENCE: {ev.confidence:.0%}',
-        f'',
+        '',
     ]
 
     if ev.frontend_components:

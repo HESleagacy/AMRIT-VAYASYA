@@ -1,53 +1,31 @@
-"""Unit tests for the Jira client.
-
-When real Jira credentials are configured in .env, list_tickets() returns
-live data from the Jira Cloud instance. Tests that depend on mock data
-are skipped in that scenario to avoid false failures.
-"""
+"""Offline tests for built-in tickets and the mocked Jira SDK boundary."""
 from __future__ import annotations
 
-import os
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
-from integrations.jira_client import get_ticket, list_tickets, _MOCK_TICKETS
+from config import get_settings
+from integrations.jira_client import get_ticket, list_tickets, post_comment, _MOCK_TICKETS
 
 
-def _real_jira_configured() -> bool:
-    """Check if real Jira credentials are present."""
-    from config import get_settings
-    s = get_settings()
-    return bool(s.jira_server and s.jira_email and s.jira_api_token)
-
-
-class TestJiraClientCore:
-    """Tests that work regardless of whether real Jira is configured."""
-
-    def test_list_tickets_returns_results(self):
-        tickets = list_tickets()
-        assert len(tickets) >= 1
-
-    def test_list_tickets_have_required_fields(self):
-        for t in list_tickets():
-            assert 'key' in t
-            assert 'summary' in t
-            assert 'status' in t
+@pytest.fixture(autouse=True)
+def offline_jira(monkeypatch):
+    for key in ('JIRA_SERVER', 'JIRA_EMAIL', 'JIRA_API_TOKEN'):
+        monkeypatch.setenv(key, '')
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
 
 
 class TestMockJiraClient:
-    """Tests that validate the 5 canonical mock tickets.
-    These are skipped when real Jira is configured because list_tickets()
-    returns live data instead of mock data in that case.
-    """
-
-    @pytest.fixture(autouse=True)
-    def _skip_if_real_jira(self):
-        if _real_jira_configured():
-            pytest.skip('Real Jira configured — mock tests skipped')
+    """Validate the canonical tickets without consulting local credentials."""
 
     def test_list_tickets_returns_all_five(self):
         tickets = list_tickets()
         assert len(tickets) == 5
+        assert all({'key', 'summary', 'status'} <= ticket.keys() for ticket in tickets)
 
     def test_get_existing_ticket(self):
         ticket = get_ticket('AMRIT-101')
@@ -76,24 +54,38 @@ class TestMockJiraClient:
         assert ticket['affected_feature'] == 'patient'
 
 
-class TestRealJiraClient:
-    """Tests that only run when real Jira is configured."""
+@pytest.fixture
+def jira_sdk(monkeypatch):
+    import jira
 
-    @pytest.fixture(autouse=True)
-    def _skip_if_no_real_jira(self):
-        if not _real_jira_configured():
-            pytest.skip('No real Jira configured — skipping live tests')
+    monkeypatch.setenv('JIRA_SERVER', 'https://jira.example.test')
+    monkeypatch.setenv('JIRA_EMAIL', 'test@example.test')
+    monkeypatch.setenv('JIRA_API_TOKEN', 'test-token')
+    get_settings.cache_clear()
+    sdk = Mock()
+    monkeypatch.setattr(jira, 'JIRA', Mock(return_value=sdk))
+    return sdk
 
-    def test_real_list_returns_tickets(self):
-        tickets = list_tickets()
-        assert len(tickets) >= 1
-        for t in tickets:
-            assert 'key' in t
-            assert 'summary' in t
 
-    def test_real_get_ticket(self):
-        tickets = list_tickets()
-        if tickets:
-            detail = get_ticket(tickets[0]['key'])
-            assert detail['key'] == tickets[0]['key']
-            assert 'summary' in detail
+def test_sdk_list_maps_issue_fields(jira_sdk):
+    jira_sdk.search_issues.return_value = [
+        SimpleNamespace(key='TEST-1', fields=SimpleNamespace(
+            summary='Patient registration', status='Open', priority='High', issuetype='Bug',
+        )),
+    ]
+    assert list_tickets() == [{
+        'key': 'TEST-1', 'summary': 'Patient registration', 'status': 'Open',
+        'priority': 'High', 'ticket_type': 'bug',
+    }]
+
+
+def test_sdk_failure_falls_back_to_builtin_tickets(jira_sdk):
+    jira_sdk.search_issues.side_effect = RuntimeError('unavailable')
+    assert len(list_tickets()) == 5
+
+
+def test_publish_uses_sdk_and_reports_failure(jira_sdk):
+    assert post_comment('TEST-1', 'Plan') == (True, 'Success')
+    jira_sdk.add_comment.assert_called_once_with('TEST-1', 'Plan')
+    jira_sdk.add_comment.side_effect = RuntimeError('permission denied')
+    assert post_comment('TEST-1', 'Plan') == (False, 'permission denied')

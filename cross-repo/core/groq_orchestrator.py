@@ -106,7 +106,7 @@ def _try_model(
                 continue
             return None
 
-        except groq_module.APIStatusError as exc:
+        except groq_module.APIStatusError:
             # Model unavailable or other API error — skip to next model
             return None
 

@@ -7,6 +7,7 @@ from qdrant_client import QdrantClient
 
 from config import get_settings
 from core.frontend_extractor import extract_http_calls
+from core.graph_identity import entity_id
 from core.neo4j_client import Neo4jClient
 from core.service_chain_resolver import extract_dependencies, resolve_class_kind
 
@@ -30,9 +31,13 @@ class GraphBuilder:
     def build(self) -> dict[str, Any]:
         """Rebuild the full cross-repo graph from Qdrant data."""
         self._neo4j.ensure_constraints()
-        stats = self._scroll_and_populate()
-        linked = self._neo4j.link_http_calls_to_endpoints()
-        stats['resolved_links'] = linked
+        with self._neo4j.build_snapshot():
+            self._pending_dependencies: dict[tuple[str, str], set[str]] = {}
+            self._seen_entities: set[tuple[str, str]] = set()
+            stats = self._scroll_and_populate()
+            for (class_id, repo), dependencies in sorted(self._pending_dependencies.items()):
+                self._neo4j.link_dependencies(class_id, sorted(dependencies), repo)
+            stats['resolved_links'] = self._neo4j.link_http_calls_to_endpoints()
         logger.info('Graph build complete: %s', stats)
         return stats
 
@@ -91,7 +96,7 @@ class GraphBuilder:
             counts['repos'] += 1
 
         # File node
-        file_key = f'{repo}::{file_path}'
+        file_key = entity_id(repo, file_path)
         if file_key not in seen_files:
             self._neo4j.upsert_file(file_path, repo, language, framework)
             seen_files.add(file_key)
@@ -102,8 +107,11 @@ class GraphBuilder:
         for class_name in classes:
             kind = resolve_class_kind(text, class_name, language)
             self._neo4j.upsert_class(class_name, kind, file_path, repo)
-            class_ids[class_name] = f'{repo}::{file_path}::{class_name}'
-            counts['classes'] += 1
+            class_ids[class_name] = entity_id(repo, file_path, class_name)
+            key = ('class', class_ids[class_name])
+            if key not in self._seen_entities:
+                self._seen_entities.add(key)
+                counts['classes'] += 1
 
         # Endpoint nodes (backend routes from api_routes metadata)
         for route in api_routes:
@@ -117,7 +125,10 @@ class GraphBuilder:
                     next(iter(class_ids.values()), None),
                 )
                 self._neo4j.upsert_endpoint(method, path, handler_id, repo)
-                counts['endpoints'] += 1
+                key = ('endpoint', entity_id(repo, method.upper(), path))
+                if key not in self._seen_entities:
+                    self._seen_entities.add(key)
+                    counts['endpoints'] += 1
 
         # HttpCall nodes — from stored metadata AND re-extracted from text
         all_calls = set(http_calls_meta)
@@ -125,14 +136,17 @@ class GraphBuilder:
             for call in extract_http_calls(text, language):
                 all_calls.add(call['raw'])
 
-        for call_raw in all_calls:
+        for call_raw in sorted(all_calls):
             parts = call_raw.split(' ', 1)
             if len(parts) == 2:
                 method, path = parts
                 # Caller = first component/service class in this file
                 caller_id = next(iter(class_ids.values()), None)
                 self._neo4j.upsert_http_call(method, path, caller_id, repo)
-                counts['http_calls'] += 1
+                key = ('call', entity_id(repo, method.upper(), path))
+                if key not in self._seen_entities:
+                    self._seen_entities.add(key)
+                    counts['http_calls'] += 1
 
         # Dependency edges
         all_deps = set(dependencies_meta)
@@ -141,7 +155,10 @@ class GraphBuilder:
 
         for class_name, class_id in class_ids.items():
             if all_deps:
-                self._neo4j.link_dependencies(class_id, list(all_deps), repo)
+                self._pending_dependencies.setdefault((class_id, repo), set()).update(all_deps)
 
     def close(self) -> None:
-        self._neo4j.close()
+        try:
+            self._neo4j.close()
+        finally:
+            self._qdrant.close()

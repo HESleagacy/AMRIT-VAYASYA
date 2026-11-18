@@ -34,15 +34,10 @@ from core.evidence import (
     UnresolvedHop,
 )
 from core.neo4j_client import Neo4jClient
+from core.graph_identity import entity_id
 from core.route_normalizer import normalize_route, routes_match
 
 logger = logging.getLogger(__name__)
-
-# Known external services that are not AMRIT repos
-_EXTERNAL_MARKERS = {
-    'twilio', 'sendgrid', 'aws', 's3', 'sns', 'sqs', 'kafka', 'rabbitmq',
-    'smtp', 'firebase', 'fcm', 'gcm', 'stripe', 'razorpay', 'sms',
-}
 
 # DTO pattern: class names ending in DTO, Request, Response, Payload
 _DTO_PATTERN = re.compile(
@@ -51,10 +46,6 @@ _DTO_PATTERN = re.compile(
 
 # Path param extractor
 _PATH_PARAM_PATTERN = re.compile(r'\{([^}]+)\}')
-
-
-def _detect_external(dep_name: str) -> bool:
-    return any(marker in dep_name.lower() for marker in _EXTERNAL_MARKERS)
 
 
 def _extract_dtos(text: str) -> list[str]:
@@ -92,21 +83,22 @@ class EvidenceCollector:
 
         # Step 2: Build backend endpoints with normalised routes
         seen_endpoints: set[str] = set()
+        seen_callers: set[tuple[str, str, str, str, str]] = set()
         all_class_names: list[str] = []
         confidence_votes: list[float] = []
 
         for row in raw_traces:
-            endpoint_key = f"{row.get('method')}::{row.get('path')}"
-            if endpoint_key in seen_endpoints:
-                continue
-            seen_endpoints.add(endpoint_key)
+            endpoint_key = entity_id(
+                row.get('backend_repo') or '', row.get('backend_file') or '',
+                row.get('handler_class') or '', row.get('method') or '', row.get('path') or '',
+            )
 
             raw_path = row.get('path') or ''
             norm_path = normalize_route(raw_path)
             handler = row.get('handler_class') or ''
             chain: list[str] = row.get('service_chain') or []
 
-            if handler:
+            if handler and handler not in all_class_names:
                 all_class_names.append(handler)
             for svc in chain:
                 if svc and svc not in all_class_names:
@@ -117,7 +109,7 @@ class EvidenceCollector:
                 endpoint_id=endpoint_key,
                 request_dto=None,
                 response_dto=None,
-                path_params=_extract_path_params(norm_path),
+                path_params=_extract_path_params(raw_path),
             )
 
             be = BackendEndpoint(
@@ -130,7 +122,10 @@ class EvidenceCollector:
                 backend_file=row.get('backend_file') or '',
                 api_contract=api_contract,
             )
-            ev.backend_endpoints.append(be)
+            if endpoint_key not in seen_endpoints:
+                seen_endpoints.add(endpoint_key)
+                ev.backend_endpoints.append(be)
+                ev.api_contracts.append(api_contract)
 
             # Service chain
             for name in chain:
@@ -145,6 +140,15 @@ class EvidenceCollector:
                 called_path = caller_raw.get('path') or raw_path
                 norm_called = normalize_route(called_path)
                 matched, match_quality = routes_match(norm_called, norm_path)
+                if not matched:
+                    continue
+                caller_key = (
+                    caller_raw.get('repo') or '', caller_raw.get('file') or '',
+                    caller_name, be.method, called_path,
+                )
+                if caller_key in seen_callers:
+                    continue
+                seen_callers.add(caller_key)
                 confidence_score = {'exact': 1.0, 'template': 0.85, 'prefix': 0.6}.get(match_quality, 0.4)
                 confidence_votes.append(confidence_score)
 
@@ -176,7 +180,7 @@ class EvidenceCollector:
         ev.log_provenance(f'Resolved {len(ev.backend_endpoints)} backend endpoints')
 
         # Step 3: Detect unresolved hops in the service chain
-        self._detect_unresolved_hops(ev, all_class_names, raw_traces)
+        self._detect_unresolved_hops(ev, raw_traces)
 
         # Step 4: Pull supporting code chunks from Qdrant
         self._pull_supporting_chunks(ev, all_class_names)
@@ -193,40 +197,17 @@ class EvidenceCollector:
     def _detect_unresolved_hops(
         self,
         ev: TraversalEvidence,
-        resolved_class_names: list[str],
         raw_traces: list[dict[str, Any]],
     ) -> None:
-        """
-        Walk the dependency metadata and flag any class that looks external
-        or was not found in the graph (closed-world violation).
-        """
-        # Gather all dependency names mentioned in the trace chain
-        all_deps: set[str] = set()
+        """Use missing dependency edges recorded by the completed graph build."""
+        hops = set()
         for row in raw_traces:
-            chain = row.get('service_chain') or []
-            for name in chain:
-                if name:
-                    all_deps.add(name)
-
-        for dep in all_deps:
-            if dep in resolved_class_names:
-                continue
-            if _detect_external(dep):
-                hop = UnresolvedHop(
-                    name=dep,
-                    hop_type='external_service',
-                    context=f'"{dep}" matches known external service pattern; not an AMRIT class',
-                )
-                ev.unresolved_hops.append(hop)
-                ev.log_provenance(f'External service boundary detected: {dep}')
-            else:
-                hop = UnresolvedHop(
-                    name=dep,
-                    hop_type='missing_repo',
-                    context=f'"{dep}" appears in dependency chain but has not been ingested',
-                )
-                ev.unresolved_hops.append(hop)
-                ev.log_provenance(f'Missing repo boundary: {dep} not found in graph')
+            for hop in row.get('unresolved_hops') or []:
+                if hop.get('name'):
+                    hops.add((hop['name'], hop.get('type') or 'missing_repo', hop.get('context') or ''))
+        for name, hop_type, context in sorted(hops):
+            ev.unresolved_hops.append(UnresolvedHop(name=name, hop_type=hop_type, context=context))
+            ev.log_provenance(f'Unresolved dependency: {name} [{hop_type}] {context}')
 
     def _pull_supporting_chunks(self, ev: TraversalEvidence, class_names: list[str]) -> None:
         """
@@ -254,10 +235,10 @@ class EvidenceCollector:
                 with_vectors=False,
             )
 
-            seen_paths: set[str] = set()
+            seen_paths: set[tuple[str, str]] = set()
             for point in results:
                 pl = point.payload or {}
-                path_key = pl.get('path', '')
+                path_key = (pl.get('repo', ''), pl.get('path', ''))
                 if path_key in seen_paths:
                     continue
                 seen_paths.add(path_key)
@@ -281,14 +262,14 @@ class EvidenceCollector:
         to the corresponding ApiContract on each BackendEndpoint.
         """
         # Build a map: handler_class -> supporting chunk text
-        class_to_text: dict[str, str] = {}
+        class_to_text: dict[tuple[str, str], str] = {}
         for chunk in ev.supporting_chunks:
             for cls in chunk.get('classes', []):
-                class_to_text[cls] = chunk.get('text', '')
+                class_to_text[(chunk.get('repo', ''), cls)] = chunk.get('text', '')
 
         for endpoint in ev.backend_endpoints:
             handler = endpoint.handler_class
-            text = class_to_text.get(handler, '')
+            text = class_to_text.get((endpoint.repo, handler), '')
             if not text or not endpoint.api_contract:
                 continue
             dtos = _extract_dtos(text)
@@ -302,4 +283,7 @@ class EvidenceCollector:
                 )
 
     def close(self) -> None:
-        self._neo4j.close()
+        try:
+            self._neo4j.close()
+        finally:
+            self._qdrant.close()

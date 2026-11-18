@@ -157,10 +157,11 @@ class SourceParser:
             'parser_name': 'tree-sitter',
         }
         root = tree.root_node
+        encoded_text = text.encode('utf-8')
         lines = text.splitlines()
 
         def node_text(node) -> str:
-            return text[node.start_byte:node.end_byte]
+            return encoded_text[node.start_byte:node.end_byte].decode('utf-8')
 
         def add_symbol(name: str | None, kind: str, node) -> None:
             if not name:
@@ -446,9 +447,10 @@ class SourceParser:
         )
 
     def _capture_named_child(self, node, snippet: str) -> str | None:
+        encoded_snippet = snippet.encode('utf-8')
         for child in getattr(node, 'children', []):
             if child.type == 'identifier':
-                return snippet[child.start_byte - node.start_byte:child.end_byte - node.start_byte]
+                return encoded_snippet[child.start_byte - node.start_byte:child.end_byte - node.start_byte].decode('utf-8')
         match = re.search(r'\b(class|interface|func|function)\s+([A-Za-z_][\w]*)', snippet)
         return match.group(2) if match else None
 

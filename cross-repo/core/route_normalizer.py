@@ -11,19 +11,8 @@ from __future__ import annotations
 
 import re
 
-# Matches UUIDs, numeric IDs, and slugs embedded in path segments
-_CONCRETE_SEGMENT = re.compile(
-    r'(?<=/)'                         # preceded by slash
-    r'('
-    r'[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}'  # UUID
-    r'|\d+'                           # pure integer
-    r'|[a-zA-Z0-9_\-]{3,}(?=(?:/|$))'  # slug-like segment that follows known patterns
-    r')',
-    re.VERBOSE,
-)
-
-# Spring Boot / JAX-RS path variables e.g.  {id}, {beneficiaryId}
-_SPRING_PARAM = re.compile(r'\{[^}]+\}')
+# Spring/JAX-RS variables and JavaScript template interpolations.
+_SPRING_PARAM = re.compile(r'\$?\{[^}]+\}')
 
 # Query string disposal
 _QUERY_STRING = re.compile(r'\?.*$')
@@ -42,11 +31,14 @@ def normalize_route(path: str) -> str:
     if not path:
         return path
 
-    # Strip query string
-    path = _QUERY_STRING.sub('', path.strip())
+    # Strip URL query/fragment components without changing path templates.
+    path = _QUERY_STRING.sub('', path.strip()).split('#', 1)[0]
+    if not path:
+        return ''
 
-    # Remove trailing slashes
-    path = path.rstrip('/')
+    # Preserve the root route and normalize IDs even without a leading slash.
+    path = '/' + path.lstrip('/')
+    path = path.rstrip('/') or '/'
 
     # Normalise framework-specific templates to {param}
     path = _SPRING_PARAM.sub('{param}', path)
@@ -84,10 +76,13 @@ def routes_match(frontend_path: str, backend_path: str) -> tuple[bool, str]:
     norm_fe = normalize_route(frontend_path)
     norm_be = normalize_route(backend_path)
 
+    if not norm_fe or not norm_be:
+        return False, 'none'
+
     if norm_fe == norm_be:
         return True, 'exact'
 
-    if norm_fe and norm_be and (norm_be.startswith(norm_fe) or norm_fe.startswith(norm_be)):
+    if norm_be.startswith(norm_fe + '/') or norm_fe.startswith(norm_be + '/'):
         return True, 'prefix'
 
     # Segment-level comparison with wildcard {param} slots

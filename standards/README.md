@@ -8,7 +8,7 @@ The standards serve two functions:
 
 1. **Human reference:** Engineers contributing to AMRIT repositories can consult these files to understand the expected code structure before writing a single line.
 
-2. **Machine consumption:** The `cross-repo` intelligence engine uses these conventions to classify code components (controller vs. service vs. repository), validate dependency direction, and produce more accurate architectural explanations.
+2. **Machine consumption:** The `cross-repo` intelligence engine loads annotation and naming patterns to classify components. Dependency-direction validation from `allowed_dependencies` is not implemented.
 
 ## Files
 
@@ -23,7 +23,9 @@ When the `cross-repo` graph engine ingests a repository, it classifies each disc
 
 - A Java class annotated with `@RestController` is classified as `controller` (per `spring-boot.yml` layering rules)
 - A TypeScript class named `*Service` with constructor-injected `HttpClient` is classified as `service` (per `angular.yml` naming conventions)
-- The `DEPENDS_ON` edges in the Neo4j graph are validated against the `allowed_dependencies` rules to detect layering violations
+- Rules load from `STANDARDS_DIR` (defaults to this directory in a repository checkout); built-in classification remains a fallback if the YAML files are absent.
+- A standalone cross-repo Docker build does not include this sibling directory. Mount it read-only and set `STANDARDS_DIR=/standards` in that container.
+- Restart the service after changing YAML; parsed rules are cached. Malformed YAML raises an error rather than silently ignoring standards.
 
 ## Adding New Standards
 

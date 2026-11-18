@@ -57,6 +57,8 @@ async def publish_implementation_plan(issue_key: str) -> dict:
         if not success:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Jira API Error: {msg}")
         return {'issue_key': issue_key, 'status': 'published'}
+    except HTTPException:
+        raise
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
     except RuntimeError as exc:
