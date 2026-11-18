@@ -15,8 +15,10 @@ from core.models import (
     QueryResponse,
 )
 from core.retrieval.hybrid import HybridRetriever
+from core.latency import latency
 
 app = FastAPI(title='Docs MCP API', version='0.2.0')
+latency.install(app)
 settings = get_settings()
 ingestion = IngestionService()
 retriever = HybridRetriever(vector_store=ingestion.store, embedder=ingestion.embedder)

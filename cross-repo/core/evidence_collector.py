@@ -35,6 +35,7 @@ from core.evidence import (
 )
 from core.neo4j_client import Neo4jClient
 from core.graph_identity import entity_id
+from core.latency import latency
 from core.route_normalizer import normalize_route, routes_match
 
 logger = logging.getLogger(__name__)
@@ -68,12 +69,14 @@ class EvidenceCollector:
         self._qdrant = QdrantClient(url=s.qdrant_url)
         self._collection = s.collection_name
 
+    @latency.measure('evidence.total')
     def collect(self, feature: str) -> TraversalEvidence:
         ev = TraversalEvidence(feature=feature)
         ev.log_provenance(f'Starting traversal for feature: "{feature}"')
 
         # Step 1: Neo4j trace query
-        raw_traces = self._neo4j.query_trace(feature)
+        with latency.measure('evidence.neo4j'):
+            raw_traces = self._neo4j.query_trace(feature)
         ev.log_provenance(f'Neo4j returned {len(raw_traces)} raw trace rows')
 
         if not raw_traces:
@@ -183,7 +186,8 @@ class EvidenceCollector:
         self._detect_unresolved_hops(ev, raw_traces)
 
         # Step 4: Pull supporting code chunks from Qdrant
-        self._pull_supporting_chunks(ev, all_class_names)
+        with latency.measure('evidence.qdrant'):
+            self._pull_supporting_chunks(ev, all_class_names)
 
         # Step 5: Extract DTOs from supporting chunks (API contract abstraction)
         self._enrich_api_contracts(ev)

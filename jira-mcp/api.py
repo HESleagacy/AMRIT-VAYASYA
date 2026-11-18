@@ -4,8 +4,10 @@ from fastapi import FastAPI, HTTPException, status
 
 from integrations.jira_client import get_ticket, list_tickets
 from integrations.plan_generator import generate_implementation_plan
+from latency import latency
 
 app = FastAPI(title='Jira MCP API', version='0.1.0')
+latency.install(app)
 
 
 @app.get('/health')
