@@ -10,7 +10,6 @@ the real Jira SDK will be used instead.
 """
 from __future__ import annotations
 
-import os
 from typing import Any
 
 from config import get_settings
@@ -213,4 +212,3 @@ def post_comment(issue_key: str, comment_body: str) -> tuple[bool, str]:
         err_msg = str(exc)
         print(f"Jira API error (post_comment): {err_msg}")
         return False, err_msg
-

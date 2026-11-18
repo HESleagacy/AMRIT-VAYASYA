@@ -18,16 +18,15 @@ Flow:
 """
 from __future__ import annotations
 
-import os
 import textwrap
 import urllib.request
 import urllib.error
+import urllib.parse
 import json
 from typing import Any
 
 from integrations.jira_client import get_ticket
-
-CROSS_REPO_URL = os.environ.get('CROSS_REPO_URL', 'http://localhost:8001')
+from config import get_settings
 
 
 def _call_cross_repo_explain(feature: str) -> dict[str, Any] | None:
@@ -35,7 +34,8 @@ def _call_cross_repo_explain(feature: str) -> dict[str, Any] | None:
     Call the cross-repo /explain endpoint to get deterministic TraversalEvidence.
     Returns parsed JSON or None if the service is unavailable.
     """
-    url = f'{CROSS_REPO_URL}/explain?feature={urllib.request.quote(feature)}'
+    base_url = get_settings().cross_repo_url.rstrip('/')
+    url = f'{base_url}/explain?{urllib.parse.urlencode({"feature": feature})}'
     try:
         req = urllib.request.Request(url)
         with urllib.request.urlopen(req, timeout=15) as resp:
@@ -46,7 +46,7 @@ def _call_cross_repo_explain(feature: str) -> dict[str, Any] | None:
         raise
     except Exception as exc:
         raise RuntimeError(
-            f'Could not reach cross-repo service at {CROSS_REPO_URL}. '
+            f'Could not reach cross-repo service at {base_url}. '
             f'Make sure it is running: uvicorn api:app --port 8001\n'
             f'Error: {exc}'
         )
@@ -162,11 +162,12 @@ def _render_plan(ticket: dict[str, Any], evidence: dict[str, Any] | None) -> str
     lines.append('SUGGESTED FILES TO MODIFY  (evidence-grounded)')
     lines.append('-' * 65)
 
-    seen_files: set[str] = set()
+    seen_files: set[tuple[str, str]] = set()
     for ep in endpoints:
         f = ep.get('backend_file', '')
-        if f and f not in seen_files:
-            seen_files.add(f)
+        file_key = (ep['repo'], f)
+        if f and file_key not in seen_files:
+            seen_files.add(file_key)
             lines.append(f'  [{ep["repo"]}]  {f}')
 
     if not seen_files:
