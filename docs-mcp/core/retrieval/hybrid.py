@@ -147,8 +147,20 @@ class HybridRetriever:
         return bonus
 
     def _cache_key(self, request: QueryRequest) -> str:
-        data = request.model_dump(mode='json')
-        return 'search:' + json.dumps(data, sort_keys=True)
+        settings = self.settings
+        data = {
+            'request': request.model_dump(mode='json'),
+            'collection': settings.collection_name,
+            'embedding_model': (
+                settings.lightweight_embedding_model if settings.use_lightweight_embeddings
+                else settings.embedding_model
+            ),
+            'embedding_dim': settings.embedding_dim,
+            'reranker_model': settings.reranker_model,
+        }
+        # Worker ingestion changes the shared SQLite revision, invalidating
+        # cached responses even in another API process.
+        return f'search:v3:{bm25_index.revision}:' + json.dumps(data, sort_keys=True)
 
     def _load_cache(self, cache_key: str) -> list[SearchResult] | None:
         if not self._redis:
