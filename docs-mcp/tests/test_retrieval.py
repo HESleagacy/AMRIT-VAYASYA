@@ -48,7 +48,9 @@ class DummyReranker:
 
 
 @pytest.mark.asyncio
-async def test_hybrid_retrieval_applies_filters_and_scores():
+async def test_hybrid_retrieval_applies_filters_and_scores(monkeypatch):
+    monkeypatch.setattr(HybridRetriever, '_load_cache', lambda *args: None)
+    monkeypatch.setattr(HybridRetriever, '_store_cache', lambda *args: None)
     original_state = bm25_state()
     try:
         chunk = DocumentChunk(

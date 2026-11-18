@@ -17,9 +17,11 @@ class SemanticChunker:
 
     def __init__(self, min_tokens: int | None = None, max_tokens: int | None = None, overlap: int | None = None):
         settings = get_settings()
-        self.min_tokens = min_tokens or settings.chunk_min_tokens
-        self.max_tokens = max_tokens or settings.chunk_max_tokens
-        self.overlap = overlap or settings.chunk_overlap_tokens
+        self.min_tokens = settings.chunk_min_tokens if min_tokens is None else min_tokens
+        self.max_tokens = settings.chunk_max_tokens if max_tokens is None else max_tokens
+        self.overlap = settings.chunk_overlap_tokens if overlap is None else overlap
+        if self.min_tokens < 1 or self.max_tokens < 1 or self.overlap < 0:
+            raise ValueError('Token limits must be positive and overlap must be non-negative')
 
     def chunk(self, doc: ParsedDocument) -> list[DocumentChunk]:
         sections = doc.sections or [ParsedSection(title=None, content=doc.text, kind='document')]
@@ -40,7 +42,10 @@ class SemanticChunker:
             current_text = '\n\n'.join(current_blocks + [block]).strip()
             if current_blocks and token_count(current_text) > self.max_tokens:
                 emitted.append(self._build_chunk(doc, section, '\n\n'.join(current_blocks).strip(), source_hash, len(emitted)))
-                current_blocks = self._overlap_blocks(current_blocks) + [block]
+                overlap_blocks = self._overlap_blocks(current_blocks)
+                while overlap_blocks and token_count('\n\n'.join(overlap_blocks + [block])) > self.max_tokens:
+                    overlap_blocks.pop(0)
+                current_blocks = overlap_blocks + [block]
                 continue
             current_blocks.append(block)
         if current_blocks:
@@ -57,19 +62,15 @@ class SemanticChunker:
         if len(chunks) < 2:
             return chunks
         rebalanced: list[DocumentChunk] = []
-        buffer_text = ''
         for chunk in chunks:
-            if token_count(chunk.text) >= self.min_tokens or not rebalanced:
-                if buffer_text:
-                    merged = f'{buffer_text}\n\n{chunk.text}'.strip()
-                    chunk = self._build_chunk(doc, section, merged, source_hash, len(rebalanced))
-                    buffer_text = ''
-                rebalanced.append(chunk)
-            else:
-                buffer_text = f'{buffer_text}\n\n{chunk.text}'.strip()
-        if buffer_text and rebalanced:
-            merged = f'{rebalanced[-1].text}\n\n{buffer_text}'.strip()
-            rebalanced[-1] = self._build_chunk(doc, section, merged, source_hash, len(rebalanced) - 1)
+            if rebalanced and token_count(chunk.text) < self.min_tokens:
+                merged = f'{rebalanced[-1].text}\n\n{chunk.text}'.strip()
+                if token_count(merged) <= self.max_tokens:
+                    rebalanced[-1] = self._build_chunk(
+                        doc, section, merged, source_hash, len(rebalanced) - 1,
+                    )
+                    continue
+            rebalanced.append(chunk)
         return rebalanced
 
     def _split_blocks(self, text: str) -> list[str]:
@@ -82,11 +83,19 @@ class SemanticChunker:
                 blocks.append(part.strip())
                 continue
             paragraphs = [paragraph.strip() for paragraph in re.split(r'\n\s*\n', part) if paragraph.strip()]
-            blocks.extend(paragraphs)
+            for paragraph in paragraphs:
+                tokens = list(re.finditer(r"\w+|[^\w\s]", paragraph))
+                if len(tokens) <= self.max_tokens:
+                    blocks.append(paragraph)
+                    continue
+                for start in range(0, len(tokens), self.max_tokens):
+                    end = start + self.max_tokens
+                    end_offset = tokens[end].start() if end < len(tokens) else len(paragraph)
+                    blocks.append(paragraph[tokens[start].start():end_offset].strip())
         return blocks or [text]
 
     def _overlap_blocks(self, blocks: list[str]) -> list[str]:
-        if not blocks:
+        if not blocks or self.overlap == 0:
             return []
         overlap_blocks: list[str] = []
         overlap_tokens = 0
@@ -130,7 +139,7 @@ class SemanticChunker:
             api_routes=doc.metadata.get('api_routes') or doc.api_routes or [],
             http_calls=doc.metadata.get('http_calls') or doc.http_calls or [],
             dependencies=doc.metadata.get('dependencies') or doc.dependencies or [],
-            ingestion_timestamp=ingestion_timestamp,
+            **({'ingestion_timestamp': ingestion_timestamp} if ingestion_timestamp else {}),
             source_hash=source_hash,
         )
 

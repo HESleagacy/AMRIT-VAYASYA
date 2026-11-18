@@ -127,6 +127,8 @@ class IngestionService:
     def _resolve_source(self, req: IngestRequest):
         if req.git_url:
             repo_name = req.repo_name or Path(req.git_url.rstrip('/').removesuffix('.git')).name
+            if not repo_name or repo_name in {'.', '..'} or any(c in repo_name for c in '/\\:'):
+                raise ValueError('repo_name must be a single directory name')
             dest = self.data_dir / 'repos' / repo_name
             if dest.exists():
                 repo = Repo(str(dest))
@@ -141,13 +143,15 @@ class IngestionService:
         if not req.path:
             raise ValueError('Either path or git_url is required')
         root = Path(req.path).expanduser().resolve()
-        if not root.exists():
-            raise ValueError(f'Path does not exist: {root}')
+        if not root.is_dir():
+            raise ValueError(f'Path is not a directory: {root}')
         return root, req.repo_name or root.name
 
     def _iter_files(self, root: Path):
         for path in root.rglob('*'):
-            if any(part in SKIP_DIRS for part in path.parts) or not path.is_file():
+            if any(part in SKIP_DIRS for part in path.relative_to(root).parts) or not path.is_file():
+                continue
+            if not path.resolve().is_relative_to(root):
                 continue
             if path.suffix.lower() in DOC_EXTENSIONS | SOURCE_EXTENSIONS:
                 yield path
@@ -199,6 +203,6 @@ class IngestionService:
 
     def _relative_path(self, path: Path, root: Path) -> str:
         try:
-            return str(path.relative_to(root))
+            return path.relative_to(root).as_posix()
         except ValueError:
             return str(path)

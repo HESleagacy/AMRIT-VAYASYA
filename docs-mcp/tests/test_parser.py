@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from core.parsing.document_parser import DocumentParser
 from core.parsing.source_parser import SourceParser
 
@@ -44,3 +46,17 @@ def test_typescript_parser_detects_angular_interface_and_comments(tmp_path: Path
     assert doc.framework_type == 'angular'
     assert 'Config' in doc.interfaces
     assert doc.comments
+
+
+def test_tree_sitter_preserves_unicode_source_and_symbol_names(tmp_path):
+    pytest.importorskip('tree_sitter_languages')
+    path = tmp_path / 'app.ts'
+    path.write_text(
+        '// नमस्ते 🌍\nexport class Café {\n  greet() { return "héllo"; }\n}\n',
+        encoding='utf-8',
+    )
+    doc = SourceParser().parse(path, 'repo')
+    assert doc.metadata['parser_name'] == 'tree-sitter'
+    assert 'Café' in doc.classes
+    assert any('return "héllo"' in section.content for section in doc.sections)
+    assert '// नमस्ते 🌍' in doc.comments

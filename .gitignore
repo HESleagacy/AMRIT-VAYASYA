@@ -83,7 +83,7 @@ celerybeat.pid
 # Graph / Data directories
 data/
 neo4j/
-qdrant/
+/qdrant/
 redis/
 logs/
 

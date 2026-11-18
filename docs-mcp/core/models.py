@@ -1,5 +1,5 @@
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -68,11 +68,11 @@ class DocumentChunk(BaseModel):
     api_routes: list[str] = Field(default_factory=list)
     http_calls: list[str] = Field(default_factory=list)
     dependencies: list[str] = Field(default_factory=list)
-    ingestion_timestamp: datetime = Field(default_factory=datetime.utcnow)
+    ingestion_timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     prev_chunk_id: str | None = None
     next_chunk_id: str | None = None
     source_hash: str
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     def payload(self) -> dict[str, Any]:
         data = self.model_dump(mode='json')
@@ -141,8 +141,8 @@ class IngestionProgress(BaseModel):
     skipped_files: int = 0
     total_files: int = 0
     indexed_chunks: int = 0
-    started_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     errors: list[str] = Field(default_factory=list)
 
 class IngestResponse(BaseModel):

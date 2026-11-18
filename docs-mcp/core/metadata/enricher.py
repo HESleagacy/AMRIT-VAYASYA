@@ -7,9 +7,9 @@ from core.models import ParsedDocument
 class MetadataEnricher:
     def enrich(self, doc: ParsedDocument, root: str | Path | None = None) -> ParsedDocument:
         p = Path(doc.path)
-        rel = str(p)
+        rel = p.as_posix()
         if root:
-            try: rel = str(p.relative_to(Path(root)))
+            try: rel = p.relative_to(Path(root)).as_posix()
             except ValueError: pass
         related_sections = []
         if doc.sections:
