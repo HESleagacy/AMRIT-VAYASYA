@@ -6,6 +6,7 @@ This module covers **Section A** (Docs MCP Server) of the MVP.
 
 Keyword chunks now persist across API/worker restarts; for an existing Qdrant
 dataset, see [keyword-index recovery](docs/keyword_index.md).
+[Latency baseline tooling](../LATENCY.md) measures the current sequential pipeline.
 
 ---
 

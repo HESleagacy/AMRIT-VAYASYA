@@ -40,6 +40,7 @@ Run from each service directory:
 - Keep `tree-sitter` below 0.22 while using `tree-sitter-languages` 1.10.x; newer parser APIs otherwise silently force regex fallback.
 - Active graph reads use versioned `Vayasya*` labels, not legacy `File`/`Class`/`Endpoint` labels. A successful `POST /build-graph` publishes a fresh snapshot atomically; no legacy nodes are deleted. See `cross-repo/GRAPH_STORAGE.md`.
 - BM25 source chunks persist in collection-scoped SQLite under `LOCAL_DATA_DIR`; API/worker must share that directory. For pre-existing Qdrant data, run `python -m scripts.rebuild_keyword_index` from `docs-mcp` while ingestion is paused.
+- Concurrency optimization is deferred. `/metrics` and `scripts/record_latency.py` provide sequential baseline timing; see `LATENCY.md`. Keep cache/model/dataset conditions explicit when comparing results.
 - Docs API import constructs `IngestionService` and creates `LOCAL_DATA_DIR` before test monkeypatches run; use a writable local path rather than the Docker `/data` value.
 - Ruff configuration exists only in `docs-mcp/pyproject.toml` (line length 100); from `docs-mcp`, run `python -m ruff check .` after installing Ruff separately. No repository-wide lint/typecheck pipeline is configured.
 

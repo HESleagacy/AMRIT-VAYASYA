@@ -27,8 +27,10 @@ from typing import Any
 
 from integrations.jira_client import get_ticket
 from config import get_settings
+from latency import latency
 
 
+@latency.measure('jira.cross_repo')
 def _call_cross_repo_explain(feature: str) -> dict[str, Any] | None:
     """
     Call the cross-repo /explain endpoint to get deterministic TraversalEvidence.
@@ -221,6 +223,7 @@ def _render_plan(ticket: dict[str, Any], evidence: dict[str, Any] | None) -> str
     return '\n'.join(lines)
 
 
+@latency.measure('jira.plan')
 def generate_implementation_plan(issue_key: str) -> str:
     """
     Fetch the ticket and generate a graph-grounded implementation plan.

@@ -5,8 +5,10 @@ from fastapi import FastAPI, HTTPException, Query, status
 from core.evidence_collector import EvidenceCollector
 from core.graph_builder import GraphBuilder
 from core.neo4j_client import Neo4jClient
+from core.latency import latency
 
 app = FastAPI(title='Cross-Repo API', version='0.1.0')
+latency.install(app)
 
 
 def _get_neo4j() -> Neo4jClient:

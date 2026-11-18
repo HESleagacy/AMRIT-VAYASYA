@@ -8,6 +8,7 @@ from core.models import QueryRequest, SearchResult
 from core.qdrant.client import QdrantVectorStore
 from core.reranking.reranker import Reranker
 from core.retrieval.bm25 import bm25_index
+from core.latency import latency
 
 
 class HybridRetriever:
@@ -33,6 +34,10 @@ class HybridRetriever:
         section: str | None = None,
         heading: str | None = None,
     ) -> list[SearchResult]:
+        with latency.measure('query.total'):
+            return await self._search(query, limit, repo_name, mode, language, section, heading)
+
+    async def _search(self, query, limit, repo_name, mode, language, section, heading):
         request = QueryRequest(
             query=query,
             repo_name=repo_name,
@@ -42,8 +47,10 @@ class HybridRetriever:
             section=section,
             heading=heading,
         )
-        cache_key = self._cache_key(request)
-        cached = self._load_cache(cache_key)
+        with latency.measure('query.index_refresh'):
+            cache_key = self._cache_key(request)
+        with latency.measure('query.cache_lookup'):
+            cached = self._load_cache(cache_key)
         if cached is not None:
             return cached
 
@@ -53,25 +60,29 @@ class HybridRetriever:
             self.settings.max_retrieval_candidates,
         )
         if request.mode in {'hybrid', 'dense'}:
-            vector = await self.embedder.embed_query(request.query)
-            candidates.extend(self.vector_store.search(
-                vector,
-                limit=candidate_limit,
-                repo_name=request.repo_name,
-                language=request.language,
-                section=request.section or request.heading,
-            ))
+            with latency.measure('query.embedding'):
+                vector = await self.embedder.embed_query(request.query)
+            with latency.measure('query.dense'):
+                candidates.extend(self.vector_store.search(
+                    vector,
+                    limit=candidate_limit,
+                    repo_name=request.repo_name,
+                    language=request.language,
+                    section=request.section or request.heading,
+                ))
         if request.mode in {'hybrid', 'keyword'}:
-            candidates.extend(bm25_index.search(
-                request.query,
-                limit=candidate_limit,
-                repo_name=request.repo_name,
-                language=request.language,
-                section=request.section or request.heading,
-            ))
+            with latency.measure('query.keyword'):
+                candidates.extend(bm25_index.search(
+                    request.query,
+                    limit=candidate_limit,
+                    repo_name=request.repo_name,
+                    language=request.language,
+                    section=request.section or request.heading,
+                ))
 
         merged = self._merge(candidates)
-        reranked = self.reranker.rerank(request.query, merged, request.limit)
+        with latency.measure('query.reranking'):
+            reranked = self.reranker.rerank(request.query, merged, request.limit)
         results = [self._to_result(candidate) for candidate in reranked]
         self._store_cache(cache_key, results)
         return results

@@ -10,6 +10,7 @@ from core.frontend_extractor import extract_http_calls
 from core.graph_identity import entity_id
 from core.neo4j_client import Neo4jClient
 from core.service_chain_resolver import extract_dependencies, resolve_class_kind
+from core.latency import latency
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class GraphBuilder:
         self._collection = s.collection_name
         self._neo4j = Neo4jClient()
 
+    @latency.measure('graph.build')
     def build(self) -> dict[str, Any]:
         """Rebuild the full cross-repo graph from Qdrant data."""
         self._neo4j.ensure_constraints()
