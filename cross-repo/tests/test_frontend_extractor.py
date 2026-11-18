@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import pytest
-
 from core.frontend_extractor import extract_http_calls
 
 

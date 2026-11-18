@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
-
 from core.service_chain_resolver import extract_dependencies, resolve_class_kind
 
 

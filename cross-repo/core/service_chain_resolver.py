@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from core.standards import classify
 
 
 _SPRING_FIELD = re.compile(
@@ -28,6 +29,9 @@ _CLASS_LAYER = {
 def resolve_class_kind(text: str, class_name: str, language: str) -> str:
     """Determine the architectural layer of a class: controller, service, repository, component, unknown."""
     snippet = text[:4000]
+    standard_kind = classify(snippet, class_name, language)
+    if standard_kind:
+        return standard_kind
     if language == 'java':
         for kind, pattern in _CLASS_LAYER.items():
             if pattern.search(snippet):

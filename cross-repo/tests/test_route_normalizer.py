@@ -6,6 +6,28 @@ import pytest
 from core.route_normalizer import normalize_route, routes_match
 
 
+@pytest.mark.parametrize(('path', 'expected'), [
+    ('/', '/'),
+    (' / ', '/'),
+    ('123/records', '/{param}/records'),
+    ('/patient/${patientId}', '/patient/{param}'),
+    ('/patient/123?expand=true#details', '/patient/{param}'),
+])
+def test_normalize_route_boundaries(path, expected):
+    assert normalize_route(path) == expected
+
+
+@pytest.mark.parametrize(('frontend', 'backend'), [
+    ('', ''),
+    (' ', '/patient'),
+    ('/', ''),
+    ('/api/patient', '/api/patients'),
+    ('/api/patient', '/api/patient-search'),
+])
+def test_unrelated_or_missing_routes_do_not_match(frontend, backend):
+    assert routes_match(frontend, backend) == (False, 'none')
+
+
 class TestNormalizeRoute:
     def test_strips_query_string(self):
         assert normalize_route('/api/v1/patient?sort=asc') == '/api/v1/patient'

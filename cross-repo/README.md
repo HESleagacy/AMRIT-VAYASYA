@@ -4,6 +4,10 @@ The graph intelligence engine for AMRIT-VAYASYA. It builds a Neo4j knowledge gra
 
 This module covers **Section B** (Cross-Repo Code Understanding) and **Section C** (API Flow Explainer Skill) of the MVP.
 
+Graph storage now uses atomic, versioned `Vayasya*` snapshots. See
+[GRAPH_STORAGE.md](GRAPH_STORAGE.md) before deploying or interpreting legacy
+Neo4j Browser queries.
+
 ---
 
 ## What It Can Answer

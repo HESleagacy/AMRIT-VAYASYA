@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -40,6 +41,14 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(
         default='',
         validation_alias=AliasChoices('groq_api_key', 'GROQ_API_KEY'),
+    )
+    graph_namespace: str = Field(default='main', validation_alias='GRAPH_NAMESPACE')
+    standards_dir: str = Field(
+        default=str(Path(__file__).resolve().parents[1] / 'standards'),
+        validation_alias='STANDARDS_DIR',
+    )
+    graph_build_timeout_seconds: float = Field(
+        default=300, gt=0, validation_alias='GRAPH_BUILD_TIMEOUT_SECONDS',
     )
 
 
