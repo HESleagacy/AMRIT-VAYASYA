@@ -4,8 +4,8 @@
 
 - Baseline: 46 passed, 2 live-Jira tests skipped.
 - After the first hardening pass: 83 passed, no skips.
-- After the correctness follow-up: **98 offline tests passed, no skips**
-  (docs 32, cross-repo 51, Jira 15), plus **4 real Neo4j integration tests**.
+- After the priority follow-up: **104 offline tests passed, no skips**
+  (docs 36, cross-repo 52, Jira 16), plus **4 real Neo4j integration tests**.
 - Verified on macOS ARM64 in clean Python 3.11 and 3.12 environments using
   only `requirements-test.txt`. Graph integration was separately verified
   against a disposable native Neo4j 5.18 server; that server was stopped afterward.
@@ -75,9 +75,15 @@
   configuration. A recovery command hydrates pre-existing Qdrant datasets.
 - **Standards loading:** Spring annotation/naming patterns and Angular naming
   patterns now load from YAML, with built-in fallback for absent files.
+- **Latency baseline:** all three APIs expose Prometheus histograms,
+  `Server-Timing`, request IDs, and structured request timing logs. Sequential
+  pipeline stages are measured without rearranging execution.
+- `scripts/record_latency.py` records sequential full-response samples,
+  p50/p95/p99, failures, throughput, environment metadata, and response digests.
+  **Concurrency and speedup comparisons are explicitly deferred.**
 
 Operational notes: `cross-repo/GRAPH_STORAGE.md`,
-`docs-mcp/docs/keyword_index.md`.
+`docs-mcp/docs/keyword_index.md`, and `LATENCY.md`.
 
 ## Remaining limits and follow-ups
 
@@ -94,8 +100,9 @@ These are not claims of production readiness:
 4. **Deployment boundaries.** SQLite sharing requires a local shared volume,
    not independent replica disks or an assumed network-filesystem guarantee.
    Mount YAML standards explicitly in standalone cross-repo containers.
-5. **Observability follow-up.** Baseline latency instrumentation and recording
-   are separated into the next PR. Concurrency optimization is deferred.
+5. **Observability scope.** Metrics are process-local; multi-worker aggregation
+   is not configured. No real-dataset latency baseline or concurrency comparison
+   has been captured, and no latency-reduction claim has been made.
 
 Live Qdrant/server-version integration, real ML inference, MCP transport, and
 Docker startup still need end-to-end verification. Upstream Starlette/httpx

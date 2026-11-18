@@ -6,7 +6,8 @@ This module covers **Section B** (Cross-Repo Code Understanding) and **Section C
 
 Graph storage now uses atomic, versioned `Vayasya*` snapshots. See
 [GRAPH_STORAGE.md](GRAPH_STORAGE.md) before deploying or interpreting legacy
-Neo4j Browser queries.
+Neo4j Browser queries. Sequential baseline timing is documented in
+[LATENCY.md](../LATENCY.md).
 
 ---
 

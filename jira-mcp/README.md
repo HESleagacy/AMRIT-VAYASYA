@@ -4,6 +4,9 @@ The Jira integration service for AMRIT-VAYASYA. It fetches Jira tickets and gene
 
 This module covers **Section D** (Jira Integration) of the MVP.
 
+Request and planning latency measurements are documented in
+[LATENCY.md](../LATENCY.md). No concurrency optimization has been introduced.
+
 ---
 
 ## What It Does
