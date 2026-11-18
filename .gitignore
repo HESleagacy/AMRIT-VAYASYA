@@ -86,6 +86,7 @@ neo4j/
 /qdrant/
 redis/
 logs/
+benchmarks/results/
 
 # MyPy
 .mypy_cache/
